@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
+    html { scroll-behavior: smooth; }
     body { font-family: 'Prompt', sans-serif; background-color: #FDFBF7; color: #2C1810; }
   </style>
 </head>
@@ -43,4 +44,254 @@
 
   <!-- Products Section -->
   <section id="products" class="max-w-6xl mx-auto px-6 py-12">
-    <div
+    <div class="text-center mb-12">
+      <h2 class="text-3xl font-bold mb-2">เลือกรสชาติที่คุณชื่นชอบ</h2>
+      <p id="sync-status" class="text-stone-500 text-sm">กำลังเชื่อมต่อฐานข้อมูลสินค้า...</p>
+    </div>
+
+    <!-- Product Grid -->
+    <div id="product-list" class="grid md:grid-cols-2 gap-8"></div>
+  </section>
+
+  <!-- Order Section -->
+  <section id="order-section" class="max-w-3xl mx-auto px-6 py-12 mb-20">
+    <div class="bg-white p-8 rounded-2xl shadow-xl border border-stone-100">
+      <h3 class="text-2xl font-bold mb-6 border-b pb-4">สรุปรายการสั่งซื้อ</h3>
+      
+      <div id="cart-summary" class="mb-6 space-y-2 text-stone-700">
+        <p class="text-stone-400 italic">กรุณาเลือกจำนวนสินค้าด้านบน (กดปุ่ม +)</p>
+      </div>
+
+      <div class="flex justify-between items-center text-xl font-bold text-amber-900 bg-amber-50 p-4 rounded-xl mb-8">
+        <span>ยอดรวมทั้งหมด</span>
+        <span id="total-price">0 บาท</span>
+      </div>
+
+      <form id="order-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">ชื่อ-นามสกุล ผู้รับ *</label>
+          <input type="text" id="customer_name" required class="w-full border border-stone-300 rounded-lg px-4 py-2.5 focus:outline-none focus:border-amber-700" placeholder="เช่น สมชาย ใจดี">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">เบอร์โทรศัพท์ *</label>
+          <input type="tel" id="phone" required class="w-full border border-stone-300 rounded-lg px-4 py-2.5 focus:outline-none focus:border-amber-700" placeholder="08X-XXX-XXXX">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">ที่อยู่จัดส่ง *</label>
+          <textarea id="address" rows="3" required class="w-full border border-stone-300 rounded-lg px-4 py-2.5 focus:outline-none focus:border-amber-700" placeholder="บ้านเลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด รหัสไปรษณีย์"></textarea>
+        </div>
+        <button type="submit" id="submit-btn" class="w-full bg-amber-700 hover:bg-amber-800 text-white font-bold py-3.5 rounded-xl shadow-md transition cursor-pointer">
+          ยืนยันการสั่งซื้อ
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <script>
+    const CONFIG = {
+      GOOGLE_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbx_vLex9KLoW9KpAChIxSahImcR4U0X0UCuuEU34RLEG5stzCUh-i25xVkHh_eTrWWjoA/exec',
+      
+      SKU_IMAGES: {
+        'CHOC-01': 'https://github.com/piyaphattho-glitch/chocolate-shop/blob/main/Screenshot%202026-11-25%20173113-choco.png?raw=true',
+        'CHOC-02': 'https://github.com/piyaphattho-glitch/chocolate-shop/blob/main/Screenshot%202026-11-25%20173208-choco2.png?raw=true'
+      },
+      GITHUB_RAW_BASE: 'https://raw.githubusercontent.com/piyaphattho-glitch/chocolate-shop/main/'
+    };
+
+    // ข้อมูลสินค้าเริ่มต้น (แสดงทันทีเพื่อให้หน้าเว็บกดใช้งานได้ตลอดเวลา)
+    const DEFAULT_PRODUCTS = [
+      {
+        sku: 'CHOC-01',
+        name: 'Signature Dark 70%',
+        description: 'ดาร์กช็อกโกแลตแท้จากเมล็ดโกโก้จังหวัดจันทบุรี รสเข้มข้น หวานน้อย',
+        price: 185,
+        weight: '80g',
+        image_filename: 'https://github.com/piyaphattho-glitch/chocolate-shop/blob/main/Screenshot%202026-11-25%20173113-choco.png?raw=true',
+        badge: 'ขายดี'
+      },
+      {
+        sku: 'CHOC-02',
+        name: 'Roasted Hazelnut Milk',
+        description: 'ช็อกโกแลตนมเนื้อเนียน ผสมเฮเซลนัทอบกรอบเต็มเมล็ด',
+        price: 210,
+        weight: '90g',
+        image_filename: 'https://github.com/piyaphattho-glitch/chocolate-shop/blob/main/Screenshot%202026-11-25%20173208-choco2.png?raw=true',
+        badge: 'แนะนำ'
+      }
+    ];
+
+    let productsData = [];
+    let cart = {};
+
+    function resolveImageUrl(item, index) {
+      if (item.image_filename && String(item.image_filename).startsWith('http')) {
+        return item.image_filename;
+      }
+      if (CONFIG.SKU_IMAGES[item.sku]) {
+        return CONFIG.SKU_IMAGES[item.sku];
+      }
+      if (item.image_filename) {
+        return CONFIG.GITHUB_RAW_BASE + encodeURIComponent(item.image_filename);
+      }
+      return index % 2 === 0 ? CONFIG.SKU_IMAGES['CHOC-01'] : CONFIG.SKU_IMAGES['CHOC-02'];
+    }
+
+    // 1. โหลดข้อมูลสินค้า (แสดงค่าเริ่มต้นก่อน แล้วอัปเดตจาก Google Sheet)
+    async function loadProducts() {
+      // แสดงสินค้าทันที
+      productsData = DEFAULT_PRODUCTS;
+      renderProducts(productsData);
+
+      const statusEl = document.getElementById('sync-status');
+      try {
+        const response = await fetch(CONFIG.GOOGLE_SCRIPT_URL);
+        const result = await response.json();
+        
+        if (result.status === 'success' && Array.isArray(result.data) && result.data.length > 0) {
+          productsData = result.data;
+          renderProducts(productsData);
+          statusEl.innerText = '✓ เชื่อมต่อข้อมูลสินค้าจาก Google Sheet เรียบร้อย';
+          statusEl.className = 'text-emerald-700 text-sm';
+        } else {
+          statusEl.innerText = 'แสดงรายการสินค้ามาตรฐาน';
+        }
+      } catch (error) {
+        console.warn('ไม่สามารถดึงข้อมูลจาก Sheet ได้ ใช้ข้อมูลสำรองแทน:', error);
+        statusEl.innerText = 'แสดงรายการสินค้ามาตรฐาน (พร้อมสั่งซื้อ)';
+      }
+    }
+
+    // 2. แสดงผลการ์ดสินค้า
+    function renderProducts(products) {
+      const container = document.getElementById('product-list');
+
+      container.innerHTML = products.map((item, index) => {
+        if (cart[item.sku] === undefined) cart[item.sku] = 0;
+        const imgUrl = resolveImageUrl(item, index);
+        
+        return `
+          <div class="bg-white rounded-2xl overflow-hidden shadow-lg border border-stone-100 flex flex-col">
+            <div class="relative h-64 bg-stone-200">
+              <img src="${imgUrl}" alt="${item.name}" class="w-full h-full object-cover">
+              ${item.badge ? `<span class="absolute top-4 left-4 bg-amber-700 text-white text-xs font-bold px-3 py-1 rounded-full">${item.badge}</span>` : ''}
+            </div>
+            <div class="p-6 flex-1 flex flex-col justify-between">
+              <div>
+                <div class="flex justify-between items-start mb-2">
+                  <h3 class="text-xl font-bold">${item.name}</h3>
+                  <span class="text-sm text-stone-400">${item.weight || ''}</span>
+                </div>
+                <p class="text-stone-600 text-sm mb-4">${item.description || ''}</p>
+              </div>
+              <div class="flex justify-between items-center pt-4 border-t">
+                <span class="text-2xl font-bold text-amber-800">${item.price} ฿</span>
+                <div class="flex items-center space-x-3">
+                  <button type="button" onclick="updateQty('${item.sku}', -1)" class="w-9 h-9 rounded-full bg-stone-200 hover:bg-stone-300 active:scale-95 font-bold cursor-pointer">-</button>
+                  <span id="qty-${item.sku}" class="font-semibold w-6 text-center">${cart[item.sku]}</span>
+                  <button type="button" onclick="updateQty('${item.sku}', 1)" class="w-9 h-9 rounded-full bg-[#2C1810] text-white hover:bg-amber-900 active:scale-95 font-bold cursor-pointer">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 3. อัปเดตจำนวนสินค้าและคำนวณยอดรวม
+    function updateQty(sku, change) {
+      if ((cart[sku] || 0) + change < 0) return;
+      cart[sku] = (cart[sku] || 0) + change;
+      const qtyEl = document.getElementById(`qty-${sku}`);
+      if (qtyEl) qtyEl.innerText = cart[sku];
+      updateCartSummary();
+    }
+
+    function updateCartSummary() {
+      const summaryEl = document.getElementById('cart-summary');
+      const totalEl = document.getElementById('total-price');
+      let total = 0;
+      let html = '';
+
+      productsData.forEach(item => {
+        const qty = cart[item.sku] || 0;
+        if (qty > 0) {
+          const subtotal = qty * Number(item.price);
+          total += subtotal;
+          html += `
+            <div class="flex justify-between">
+              <span>${item.name} (${item.sku}) x ${qty}</span>
+              <span class="font-semibold">${subtotal.toLocaleString()} บาท</span>
+            </div>
+          `;
+        }
+      });
+
+      summaryEl.innerHTML = html || '<p class="text-stone-400 italic">กรุณาเลือกจำนวนสินค้าด้านบน (กดปุ่ม +)</p>';
+      totalEl.innerText = total.toLocaleString() + ' บาท';
+    }
+
+    // 4. ส่งข้อมูลคำสั่งซื้อไปยัง Google Sheet (รองรับ CORS เต็มรูปแบบ)
+    document.getElementById('order-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      let itemsList = [];
+      let totalPrice = 0;
+      productsData.forEach(item => {
+        const qty = cart[item.sku] || 0;
+        if (qty > 0) {
+          itemsList.push(`${item.sku}: ${item.name} (${qty} ชิ้น)`);
+          totalPrice += qty * Number(item.price);
+        }
+      });
+
+      if (itemsList.length === 0) {
+        alert('กรุณากดปุ่ม + เพื่อเลือกสินค้าอย่างน้อย 1 ชิ้นก่อนยืนยันการสั่งซื้อครับ');
+        return;
+      }
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.innerText = 'กำลังบันทึกคำสั่งซื้อ...';
+
+      const payload = {
+        customer_name: document.getElementById('customer_name').value,
+        phone: document.getElementById('phone').value,
+        address: document.getElementById('address').value,
+        items_summary: itemsList.join(', '),
+        total_price: totalPrice
+      };
+
+      try {
+        // ใช้ text/plain เพื่อหลีกเลี่ยง CORS Preflight ของ Google Apps Script
+        const response = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+
+        if (result.status === 'success') {
+          alert(`สั่งซื้อสำเร็จ! รหัสคำสั่งซื้อของคุณคือ: ${result.order_id}`);
+          document.getElementById('order-form').reset();
+          Object.keys(cart).forEach(k => {
+            cart[k] = 0;
+            const el = document.getElementById(`qty-${k}`);
+            if (el) el.innerText = '0';
+          });
+          updateCartSummary();
+        } else {
+          alert('เกิดข้อผิดพลาดจากระบบ: ' + (result.message || 'ไม่ทราบสาเหตุ'));
+        }
+      } catch (error) {
+        alert('ไม่สามารถเชื่อมต่อ Google Sheet ได้ กรุณาตรวจสอบสิทธิ์การ Deploy ของ Apps Script (ต้องตั้งเป็น Anyone)');
+        console.error(error);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'ยืนยันการสั่งซื้อ';
+      }
+    });
+
+    loadProducts();
+  </script>
+</body>
+</html>
